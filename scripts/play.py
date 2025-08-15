@@ -16,14 +16,14 @@ src_dir = script_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 from strategy.blueprint_generator import BlueprintGenerator
-from engine.game_state import GameState, Action
+from engine.game_state import GameState, Action, BettingRound
 from abstraction.action_abstraction import ActionAbstraction
 from engine.hand_evaluator import Card, Rank, Suit
 import yaml
 
 
 class SimpleBot:
-    """Simple bot that uses the trained blueprint strategy"""
+    """Pluribus-inspired bot that uses trained blueprint strategy with real-time search"""
     
     def __init__(self, blueprint_generator: BlueprintGenerator, player_id: int, debug_mode: bool = False):
         self.blueprint_gen = blueprint_generator
@@ -31,15 +31,20 @@ class SimpleBot:
         self.cfr_solver = blueprint_generator.cfr_solver
         self.action_abstraction = blueprint_generator.action_abstraction
         self.debug_mode = debug_mode
+        
+        # Pluribus-style behavior settings
+        self.avoid_limping = True  # Pluribus avoids limping
+        self.donk_bet_frequency = 0.15  # Pluribus does more donk betting than humans
+        self.bluff_frequency = 0.25  # Reasonable bluffing frequency
+        
+        # Real-time search parameters (simplified version of Pluribus approach)
+        self.search_depth = 3  # Look ahead 3 actions
+        self.search_time_limit = 2.0  # 2 seconds per decision (simplified)
     
     def get_action(self, game_state: GameState):
-        """Get action from bot using blueprint strategy"""
+        """Get action from bot using Pluribus-style decision making"""
         if game_state.current_player != self.player_id:
             return None
-        
-        # Get strategy from blueprint
-        infoset_key = self.cfr_solver.create_infoset_key(game_state, self.player_id)
-        strategy = self.cfr_solver.get_strategy(infoset_key)
         
         # Get available actions
         abstract_actions = self.action_abstraction.get_abstract_actions(
@@ -49,29 +54,255 @@ class SimpleBot:
         if not abstract_actions:
             return None
         
-        # Sample action from strategy
-        if strategy is not None and len(strategy) == len(abstract_actions):
-            # Check if strategy has meaningful weights
-            strategy_sum = sum(strategy)
-            if strategy_sum > 0:
-                action_idx = random.choices(range(len(abstract_actions)), 
-                                           weights=strategy)[0]
-                if self.debug_mode:
-                    print(f"🤖 Using trained strategy: {[f'{p:.3f}' for p in strategy]} -> action {action_idx}")
-            else:
-                # Strategy exists but is all zeros
-                action_idx = random.randint(0, len(abstract_actions) - 1)
-                if self.debug_mode:
-                    print(f"🎲 Strategy all zeros, using random action {action_idx}")
-        else:
-            # No strategy found - use conservative heuristic instead of random
-            action_idx = self._get_conservative_action(abstract_actions)
-            if self.debug_mode:
-                print(f"🚫 No strategy found for infoset '{infoset_key}', using conservative action {action_idx}")
-                print(f"Available actions: {[desc for desc, _, _ in abstract_actions]}")
+        # Apply Pluribus-style real-time search and decision making
+        action_idx = self._pluribus_style_decision(game_state, abstract_actions)
         
         desc, action_type, amount = abstract_actions[action_idx]
         return desc, action_type, amount
+    
+    def _pluribus_style_decision(self, game_state: GameState, abstract_actions):
+        """Pluribus-inspired decision making with blueprint + real-time search"""
+        # First, get baseline strategy from blueprint
+        infoset_key = self.cfr_solver.create_infoset_key(game_state, self.player_id)
+        strategy = self.cfr_solver.get_strategy(infoset_key)
+        
+        # If we have a trained strategy, enhance it with real-time search
+        if strategy is not None and len(strategy) == len(abstract_actions) and sum(strategy) > 0:
+            # Apply Pluribus behavioral adjustments
+            modified_strategy = self._apply_pluribus_adjustments(game_state, abstract_actions, strategy)
+            
+            # Enhance with limited real-time search (simplified Pluribus approach)
+            refined_strategy = self._real_time_search_refinement(game_state, abstract_actions, modified_strategy)
+            
+            action_idx = random.choices(range(len(abstract_actions)), 
+                                       weights=refined_strategy)[0]
+            if self.debug_mode:
+                print(f"🤖 Blueprint: {[f'{p:.3f}' for p in strategy]}")
+                print(f"🎯 Adjusted: {[f'{p:.3f}' for p in modified_strategy]}")
+                print(f"🔍 Refined: {[f'{p:.3f}' for p in refined_strategy]} -> action {action_idx}")
+            return action_idx
+        
+        # Fallback to Pluribus-style heuristics with search
+        if self.debug_mode:
+            print(f"🚫 No strategy found, using Pluribus heuristics with search")
+        return self._pluribus_heuristic_action(game_state, abstract_actions)
+    
+    def _real_time_search_refinement(self, game_state: GameState, abstract_actions, base_strategy):
+        """Simplified real-time search to refine strategy (inspired by Pluribus)"""
+        # Simplified version: evaluate each action's expected value over short horizon
+        action_values = []
+        
+        for i, (desc, action_type, amount) in enumerate(abstract_actions):
+            # Simulate taking this action and estimate value
+            expected_value = self._estimate_action_value(game_state, action_type, amount)
+            action_values.append(expected_value)
+        
+        # Blend blueprint strategy with search results
+        if max(action_values) > min(action_values):  # If search provides meaningful distinction
+            # Normalize action values
+            min_val = min(action_values)
+            max_val = max(action_values)
+            normalized_values = [(v - min_val) / (max_val - min_val) for v in action_values]
+            
+            # Blend with blueprint (70% blueprint, 30% search)
+            blended_strategy = []
+            for i in range(len(abstract_actions)):
+                blueprint_weight = base_strategy[i] * 0.7
+                search_weight = normalized_values[i] * 0.3
+                blended_strategy.append(blueprint_weight + search_weight)
+            
+            # Normalize to sum to 1
+            total = sum(blended_strategy)
+            if total > 0:
+                blended_strategy = [w / total for w in blended_strategy]
+                return blended_strategy
+        
+        # If search doesn't provide value, return original strategy
+        return base_strategy
+    
+    def _estimate_action_value(self, game_state: GameState, action_type: Action, amount: int):
+        """Estimate the value of taking an action (simplified)"""
+        # Create a copy of game state and simulate the action
+        try:
+            simulated_state = game_state.copy()
+            success = simulated_state.apply_action(self.player_id, action_type, amount)
+            
+            if not success:
+                return -1.0  # Invalid actions have very low value
+            
+            # Simple heuristic evaluation
+            if action_type == Action.FOLD:
+                return -0.5  # Folding has negative value but not terrible
+            
+            # Estimate based on pot odds and hand strength
+            hand_strength = self._evaluate_hand_strength(game_state)
+            pot_size = simulated_state.pot
+            
+            if action_type in [Action.RAISE, Action.ALL_IN]:
+                # Aggressive actions: value depends on hand strength and pot size
+                value = hand_strength * 1.5 - 0.3  # Base aggressive value
+                
+                # Adjust for pot size (bigger pots = more valuable to win)
+                if pot_size > game_state.big_blind * 10:
+                    value += 0.2
+                    
+                return value
+                
+            elif action_type == Action.CALL:
+                # Calling: value based on pot odds vs hand strength
+                call_amount = max(0, game_state.current_bet - game_state.players[self.player_id].bet_this_round)
+                if call_amount > 0 and pot_size > 0:
+                    pot_odds = call_amount / (pot_size + call_amount)
+                    return hand_strength - pot_odds  # Simple pot odds calculation
+                else:
+                    return hand_strength * 0.5
+                    
+            elif action_type == Action.CHECK:
+                return hand_strength * 0.3  # Checking is conservative
+                
+        except Exception:
+            # If simulation fails, return neutral value
+            return 0.0
+        
+        return 0.0
+    
+    def _apply_pluribus_adjustments(self, game_state: GameState, abstract_actions, base_strategy):
+        """Apply Pluribus-style behavioral adjustments to base strategy"""
+        adjusted = list(base_strategy.copy())
+        
+        # 1. Avoid limping (calling big blind preflop)
+        if (self.avoid_limping and game_state.betting_round == BettingRound.PREFLOP and 
+            game_state.current_bet == game_state.big_blind):
+            
+            for i, (desc, action_type, amount) in enumerate(abstract_actions):
+                if action_type == Action.CALL and "call" in desc.lower():
+                    # Reduce limping probability and redistribute to fold/raise
+                    limping_reduction = adjusted[i] * 0.7
+                    adjusted[i] *= 0.3
+                    
+                    # Redistribute to aggressive actions
+                    for j, (desc2, action_type2, _) in enumerate(abstract_actions):
+                        if action_type2 in [Action.RAISE, Action.ALL_IN]:
+                            adjusted[j] += limping_reduction / sum(1 for _, at, _ in abstract_actions if at in [Action.RAISE, Action.ALL_IN])
+        
+        # 2. Increase donk betting frequency
+        if (game_state.betting_round != BettingRound.PREFLOP and 
+            len(game_state.round_betting_history[game_state.betting_round]) == 0):
+            
+            for i, (desc, action_type, amount) in enumerate(abstract_actions):
+                if action_type in [Action.RAISE] and "bet" in desc.lower():
+                    adjusted[i] *= (1.0 + self.donk_bet_frequency)
+        
+        # Normalize to ensure probabilities sum to 1
+        total = sum(adjusted)
+        if total > 0:
+            adjusted = [p / total for p in adjusted]
+        
+        return adjusted
+    
+    def _pluribus_heuristic_action(self, game_state: GameState, abstract_actions):
+        """Pluribus-style heuristic when no trained strategy available"""
+        # Evaluate hand strength (simplified)
+        hand_strength = self._evaluate_hand_strength(game_state)
+        
+        # Pluribus-style action preferences based on hand strength and situation
+        action_scores = []
+        
+        for i, (desc, action_type, amount) in enumerate(abstract_actions):
+            score = self._score_action_pluribus_style(game_state, desc, action_type, amount, hand_strength)
+            action_scores.append(score)
+        
+        # Choose action probabilistically based on scores
+        if max(action_scores) > 0:
+            # Softmax selection for more realistic play
+            import math
+            exp_scores = [math.exp(score * 3) for score in action_scores]  # Temperature = 1/3
+            total_exp = sum(exp_scores)
+            probabilities = [exp_s / total_exp for exp_s in exp_scores]
+            return random.choices(range(len(abstract_actions)), weights=probabilities)[0]
+        else:
+            return random.randint(0, len(abstract_actions) - 1)
+    
+    def _score_action_pluribus_style(self, game_state, desc, action_type, amount, hand_strength):
+        """Score an action using Pluribus-style heuristics"""
+        score = 0.0
+        
+        # Base scoring by action type and hand strength
+        if action_type == Action.FOLD:
+            score = 1.0 - hand_strength  # Fold more with weak hands
+        elif action_type == Action.CHECK:
+            score = 0.5  # Neutral action
+        elif action_type == Action.CALL:
+            # Avoid limping preflop
+            if (game_state.betting_round == BettingRound.PREFLOP and 
+                game_state.current_bet == game_state.big_blind and self.avoid_limping):
+                score = 0.1  # Strongly discourage limping
+            else:
+                score = hand_strength * 0.8
+        elif action_type in [Action.RAISE, Action.ALL_IN]:
+            # Aggressive actions
+            score = hand_strength * 1.2
+            
+            # Small raises are preferred over large ones (like Pluribus)
+            if "small" in desc.lower() or "25%" in desc.lower() or "33%" in desc.lower():
+                score *= 1.2
+            elif "large" in desc.lower() or "100%" in desc.lower() or "200%" in desc.lower():
+                score *= 0.8
+        
+        # Position-based adjustments (Pluribus considers position heavily)
+        position = (self.player_id - game_state.dealer_position) % game_state.num_players
+        if position <= 2:  # Early position - more conservative
+            if action_type in [Action.RAISE, Action.ALL_IN]:
+                score *= 0.8
+        elif position >= game_state.num_players - 2:  # Late position - more aggressive
+            if action_type in [Action.RAISE, Action.ALL_IN]:
+                score *= 1.2
+        
+        return max(0, score)
+    
+    def _evaluate_hand_strength(self, game_state):
+        """Simple hand strength evaluation (0.0 to 1.0)"""
+        player = game_state.players[self.player_id]
+        hole_cards = player.hole_cards
+        
+        if not hole_cards or len(hole_cards) < 2:
+            return 0.3  # Default mediocre strength
+        
+        # Simple preflop hand strength
+        if game_state.betting_round == BettingRound.PREFLOP:
+            rank1, rank2 = hole_cards[0].rank.value, hole_cards[1].rank.value
+            
+            # Pairs
+            if rank1 == rank2:
+                return min(0.95, 0.5 + rank1 / 28.0)  # Higher pairs = stronger
+            
+            # High cards
+            high_card = max(rank1, rank2)
+            if high_card >= 12:  # Queen or better
+                return 0.7
+            elif high_card >= 10:  # Ten or Jack
+                return 0.6
+            else:
+                return 0.4
+        
+        # Post-flop: use simple heuristic based on hand type
+        all_cards = hole_cards + game_state.community_cards
+        if len(all_cards) >= 5:
+            # Very simplified strength based on hand ranking
+            hand_desc = evaluate_hand(hole_cards, game_state.community_cards)
+            
+            if "Flush" in hand_desc or "Straight" in hand_desc:
+                return 0.9
+            elif "Three" in hand_desc or "Full House" in hand_desc:
+                return 0.85
+            elif "Two Pair" in hand_desc:
+                return 0.7
+            elif "Pair" in hand_desc:
+                return 0.6
+            else:
+                return 0.4
+        
+        return 0.5  # Default medium strength
     
     def _get_conservative_action(self, abstract_actions):
         """Conservative strategy when no trained strategy exists"""

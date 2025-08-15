@@ -196,6 +196,9 @@ class GameState:
         # Check if betting round is complete
         if self._is_betting_round_complete():
             self._advance_betting_round()
+        elif len(self.get_active_players()) <= 1:
+            # If only one player left, end the hand immediately
+            self._end_hand()
         
         return True
     
@@ -243,13 +246,41 @@ class GameState:
             return True
         
         if len(betting_players) == 1:
-            # Only one player can bet, check if they've acted
-            return self.current_player != betting_players[0].player_id or \
-                   betting_players[0].bet_this_round == self.current_bet
+            # Only one player can bet - round complete if they've matched current bet
+            return betting_players[0].bet_this_round == self.current_bet
         
-        # All betting players must have equal bets
+        # Check if all players have had a chance to act
+        # and all have equal bets
         bet_amounts = [p.bet_this_round for p in betting_players]
-        return len(set(bet_amounts)) == 1 and all(amount == self.current_bet for amount in bet_amounts)
+        all_equal_bets = len(set(bet_amounts)) == 1 and all(amount == self.current_bet for amount in bet_amounts)
+        
+        # Also ensure we've gone around to all players at least once
+        if not hasattr(self, '_last_aggressor_acted'):
+            self._last_aggressor_acted = False
+        
+        # If there was aggressive action, ensure everyone has had chance to respond
+        if self.last_aggressive_player is not None:
+            # Check if we've completed a full cycle after the last aggressive action
+            return all_equal_bets and self._has_completed_betting_cycle()
+        else:
+            # No aggressive action yet, just check if everyone has equal bets
+            return all_equal_bets
+    
+    def _has_completed_betting_cycle(self) -> bool:
+        """Check if we've completed a betting cycle after aggressive action"""
+        if self.last_aggressive_player is None:
+            return True
+        
+        # Simple check: if all active players have acted in this round
+        active_players = self.get_active_players()
+        betting_players = [p for p in active_players if not p.is_all_in]
+        
+        # Count actions in current round
+        current_round_actions = self.round_betting_history[self.betting_round]
+        players_who_acted = set(action[0] for action in current_round_actions)
+        
+        # All betting players should have acted at least once
+        return all(p.player_id in players_who_acted for p in betting_players)
     
     def _advance_betting_round(self):
         """Advance to next betting round or end hand"""

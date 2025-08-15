@@ -1,0 +1,39 @@
+# Working 6-player configuration using SimpleCFR
+game:
+  num_players: 6
+  small_blind: 50
+  big_blind: 100
+  starting_stack: 10000
+  min_players: 6
+  max_players: 6
+
+training:
+  iterations: 25000
+  checkpoint_frequency: 5000
+  evaluation_frequency: 10000
+  parallel_workers: 16
+
+abstraction:
+  # Reasonable abstractions that will create many infosets
+  card_buckets:
+    preflop: 100    # Good preflop abstraction
+    flop: 500       # Meaningful flop abstraction
+    turn: 750       # Turn abstraction
+    river: 1000     # River abstraction
+  
+  # Multiple action sizes for complexity
+  action_fractions: [0.33, 0.67, 1.0, 1.5, 2.0, 3.0]
+  
+  hand_samples: 3000
+  clustering_samples: 1500
+  use_fast_eval: false
+
+cfr:
+  solver_type: "simple"  # Use SimpleCFR for reliability
+  discount_factor: 0.95
+  exploration_threshold: 0.3
+  regret_matching_plus: true
+
+evaluation:
+  num_hands: 1000
+  num_opponents: 5

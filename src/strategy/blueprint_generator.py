@@ -10,7 +10,7 @@ from typing import Dict, List
 from tqdm import tqdm
 from engine.game_state import GameState, BettingRound
 from engine.hand_evaluator import Card, Rank, Suit, create_card
-from abstraction.card_abstraction import CardAbstraction
+from abstraction.simple_card_abstraction import SimpleCardAbstraction
 from abstraction.action_abstraction import ActionAbstraction
 from cfr.linear_cfr import LinearCFR
 from cfr.batch_mccfr import BatchMCCFR
@@ -62,7 +62,7 @@ class BlueprintGenerator:
             print("Batch processing disabled (using single-iteration training for stability)")
         
         # Initialize abstractions with device config
-        self.card_abstraction = CardAbstraction(
+        self.card_abstraction = SimpleCardAbstraction(
             self.config['abstraction'], 
             device_config=self.device_config
         )
@@ -90,12 +90,25 @@ class BlueprintGenerator:
                     device_config=self.device_config
                 )
         else:
-            # Use SimpleCFR for reliable training without infinite loops
-            self.cfr_solver = SimpleCFR(
-                self.card_abstraction, 
-                self.action_abstraction,
-                device_config=self.device_config
-            )
+            # Check config for CFR solver type
+            solver_type = self.config.get('cfr', {}).get('solver_type', 'mccfr')
+            
+            if solver_type == 'mccfr':
+                from cfr.mccfr import MCCFR
+                self.cfr_solver = MCCFR(
+                    self.card_abstraction, 
+                    self.action_abstraction,
+                    device_config=self.device_config
+                )
+                print("✅ MCCFR solver initialized")
+            else:
+                # Fallback to SimpleCFR
+                self.cfr_solver = SimpleCFR(
+                    self.card_abstraction, 
+                    self.action_abstraction,
+                    device_config=self.device_config
+                )
+                print("⚠️ Using SimpleCFR fallback")
         
         # Game configuration
         self.game_config = self.config['game']

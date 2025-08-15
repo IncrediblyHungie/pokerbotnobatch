@@ -1,0 +1,40 @@
+# Proper 6-player Pluribus-style training configuration
+game:
+  num_players: 6  # Full 6-player poker like Pluribus
+  small_blind: 50
+  big_blind: 100
+  starting_stack: 10000
+  min_players: 6
+  max_players: 6
+
+training:
+  iterations: 50000  # More iterations for complexity
+  checkpoint_frequency: 5000
+  evaluation_frequency: 10000
+  parallel_workers: 8
+
+abstraction:
+  # Proper card abstractions for 6-player poker
+  card_buckets:
+    preflop: 169    # All possible preflop hand combinations
+    flop: 1000      # Reasonable flop abstraction
+    turn: 1000      # Turn abstraction  
+    river: 1000     # River abstraction
+  
+  # Pluribus-style action abstractions (~14 bet sizes)
+  action_fractions: [0.25, 0.33, 0.5, 0.67, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 10.0]
+  
+  # Proper hand evaluation settings
+  hand_samples: 10000
+  clustering_samples: 5000
+  use_fast_eval: false  # Use proper evaluation
+
+cfr:
+  solver_type: "mccfr"  # Use proper Monte Carlo CFR
+  discount_factor: 0.95
+  exploration_threshold: 0.6  # Higher exploration like Pluribus
+  regret_matching_plus: true
+
+evaluation:
+  num_hands: 1000
+  num_opponents: 5  # 6-player evaluation

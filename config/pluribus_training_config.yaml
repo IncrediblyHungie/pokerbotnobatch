@@ -1,0 +1,39 @@
+# Pluribus-style training configuration
+# Optimized for quality over speed
+
+game_config:
+  num_players: 6
+  starting_stack: 10000
+  small_blind: 50
+  big_blind: 100
+
+training:
+  # Moderate iterations for quality training
+  iterations: 500000
+  
+  # Memory and performance
+  batch_size: 1000
+  update_frequency: 100
+  
+  # Device settings
+  use_gpu: true
+  gpu_batch_size: 2048
+  
+  # Checkpointing
+  checkpoint_frequency: 50000
+  
+  # Pluribus-inspired settings
+  exploration_rate: 0.6  # Higher exploration like Pluribus
+  regret_minimization: true
+  
+# Card abstraction settings
+card_abstraction:
+  preflop_buckets: 169    # All possible preflop hands
+  flop_buckets: 1000      # Reasonable abstraction
+  turn_buckets: 1000
+  river_buckets: 1000
+  
+# Action abstraction (Pluribus used ~14 bet sizes)
+action_abstraction:
+  bet_sizes: [0.25, 0.33, 0.5, 0.66, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, "all-in"]
+  raise_sizes: [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, "all-in"]
