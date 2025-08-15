@@ -80,6 +80,22 @@ class GameState:
         self.terminal = False
         self.winner = None
         
+        # Initialize deck for dealing community cards
+        self._deck = []
+    
+    def _create_and_shuffle_deck(self):
+        """Create and shuffle a deck of cards"""
+        import random
+        from engine.hand_evaluator import Card, Rank, Suit
+        
+        deck = []
+        for suit in Suit:
+            for rank in Rank:
+                deck.append(Card(rank, suit))
+        
+        random.shuffle(deck)
+        self._deck = deck
+        
     def get_active_players(self) -> List[Player]:
         """Get list of players still in the hand"""
         return [p for p in self.players if p.is_active and not p.folded]
@@ -246,10 +262,23 @@ class GameState:
         
         if self.betting_round == BettingRound.PREFLOP:
             self.betting_round = BettingRound.FLOP
+            # Deal the flop (3 cards)
+            if not hasattr(self, '_deck') or not self._deck:
+                self._create_and_shuffle_deck()
+            self.community_cards = self._deck[:3]
+            self._deck = self._deck[3:]
         elif self.betting_round == BettingRound.FLOP:
             self.betting_round = BettingRound.TURN
+            # Deal the turn (1 more card)
+            if self._deck:
+                self.community_cards.append(self._deck[0])
+                self._deck = self._deck[1:]
         elif self.betting_round == BettingRound.TURN:
             self.betting_round = BettingRound.RIVER
+            # Deal the river (1 more card)
+            if self._deck:
+                self.community_cards.append(self._deck[0])
+                self._deck = self._deck[1:]
         else:
             # River complete - go to showdown
             self._end_hand()
@@ -277,10 +306,91 @@ class GameState:
         active_players = self.get_active_players()
         if len(active_players) == 1:
             self.winner = active_players[0].player_id
+            self._distribute_pot()
         else:
-            # Multiple players - would need showdown logic
-            # For now, just mark as terminal
-            pass
+            # Multiple players - need showdown
+            self._determine_winner_at_showdown(active_players)
+    
+    def _determine_winner_at_showdown(self, active_players: List[Player]):
+        """Determine winner(s) at showdown using hand evaluation"""
+        from engine.hand_evaluator import HandEvaluator
+        
+        evaluator = HandEvaluator()
+        player_hands = []
+        
+        # Evaluate each player's hand (no debug output during training)
+        for player in active_players:
+            all_cards = player.hole_cards + self.community_cards
+            if len(all_cards) >= 5:
+                hand_rank, kickers = evaluator.evaluate_hand(all_cards)
+                player_hands.append((player.player_id, hand_rank, kickers))
+            else:
+                # Should not happen in proper game flow
+                player_hands.append((player.player_id, None, []))
+        
+        # Find the best hand(s)
+        best_players = []
+        best_hand_rank = None
+        best_kickers = None
+        
+        for player_id, hand_rank, kickers in player_hands:
+            if hand_rank is None:
+                continue
+                
+            if best_hand_rank is None or hand_rank.value > best_hand_rank.value:
+                best_players = [player_id]
+                best_hand_rank = hand_rank
+                best_kickers = kickers
+            elif hand_rank.value == best_hand_rank.value:
+                # Compare kickers
+                kicker_comparison = self._compare_kickers(kickers, best_kickers)
+                if kicker_comparison > 0:
+                    best_players = [player_id]
+                    best_kickers = kickers
+                elif kicker_comparison == 0:
+                    best_players.append(player_id)
+        
+        # Set winners (can be multiple for ties)
+        if len(best_players) == 1:
+            self.winner = best_players[0]
+        else:
+            self.winner = best_players  # Multiple winners (tie)
+        
+        # Actually distribute the pot to winner(s)
+        self._distribute_pot()
+    
+    def _distribute_pot(self):
+        """Distribute the pot to the winner(s)"""
+        if self.winner is None or self.pot == 0:
+            return
+            
+        if isinstance(self.winner, list):
+            # Multiple winners - split pot
+            pot_share = self.pot // len(self.winner)
+            remainder = self.pot % len(self.winner)
+            
+            for i, winner_id in enumerate(self.winner):
+                self.players[winner_id].stack += pot_share
+                # Give remainder to first winner(s)
+                if i < remainder:
+                    self.players[winner_id].stack += 1
+            
+            pass  # Pot split silently
+        else:
+            # Single winner takes all
+            self.players[self.winner].stack += self.pot
+        
+        # Reset pot
+        self.pot = 0
+    
+    def _compare_kickers(self, kickers1: List[int], kickers2: List[int]) -> int:
+        """Compare kickers. Returns 1 if kickers1 > kickers2, -1 if kickers1 < kickers2, 0 if equal"""
+        for k1, k2 in zip(kickers1, kickers2):
+            if k1 > k2:
+                return 1
+            elif k1 < k2:
+                return -1
+        return 0
     
     def is_terminal(self) -> bool:
         """Check if game state is terminal"""
@@ -317,9 +427,16 @@ class GameState:
         if not self.terminal:
             return payoffs
         
-        # Simple implementation - winner takes all pot
+        # Handle winner(s) - can be single winner or multiple winners (tie)
         if self.winner is not None:
-            payoffs[self.winner] = float(self.pot)
+            if isinstance(self.winner, list):
+                # Multiple winners - split pot
+                pot_share = float(self.pot) / len(self.winner)
+                for winner_id in self.winner:
+                    payoffs[winner_id] = pot_share
+            else:
+                # Single winner takes all
+                payoffs[self.winner] = float(self.pot)
         
         # Subtract total bets from all players
         for i, player in enumerate(self.players):

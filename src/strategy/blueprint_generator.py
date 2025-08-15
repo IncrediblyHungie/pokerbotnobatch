@@ -50,7 +50,7 @@ class BlueprintGenerator:
         
         # Disable batch processing by default due to stability issues
         # Users can enable it later when the BatchMCCFR implementation is fixed
-        self.use_batch_processing = False  # use_batch_processing and self.device_config.use_gpu
+        self.use_batch_processing = use_batch_processing and self.device_config.use_gpu
         self.batch_size = batch_size
         
         print(f"Using {'GPU' if self.device_config.use_gpu else 'CPU'} for computation "
@@ -110,8 +110,9 @@ class BlueprintGenerator:
             big_blind=self.game_config['big_blind']
         )
         
-        # Deal random cards
+        # Create and shuffle deck for this hand
         deck = self._create_shuffled_deck()
+        game_state._deck = deck.copy()
         
         # Deal hole cards
         card_idx = 0
@@ -119,15 +120,11 @@ class BlueprintGenerator:
             player.hole_cards = [deck[card_idx], deck[card_idx + 1]]
             card_idx += 2
         
-        # Set community cards based on betting round
-        if game_state.betting_round == BettingRound.PREFLOP:
-            game_state.community_cards = []
-        elif game_state.betting_round == BettingRound.FLOP:
-            game_state.community_cards = deck[card_idx:card_idx + 3]
-        elif game_state.betting_round == BettingRound.TURN:
-            game_state.community_cards = deck[card_idx:card_idx + 4]
-        elif game_state.betting_round == BettingRound.RIVER:
-            game_state.community_cards = deck[card_idx:card_idx + 5]
+        # Remove dealt hole cards from the game's deck
+        game_state._deck = deck[card_idx:]
+        
+        # Community cards start empty (will be dealt during betting rounds)
+        game_state.community_cards = []
         
         return game_state
     
@@ -242,23 +239,24 @@ class BlueprintGenerator:
         if not self.use_batch_processing:
             # Standard single-iteration training
             for iteration in tqdm(range(iterations), desc="Training"):
-                # Sample random game situation
-                num_players = random.randint(
-                    self.game_config['min_players'], 
-                    self.game_config['max_players']
-                )
+                # Use fixed game setup for speed (heads-up only)
+                num_players = self.game_config.get('max_players', 2)  # Prefer max players for consistency
                 
-                game_state = self.setup_game(num_players)
+                # Cache game state setup if possible
+                if not hasattr(self, '_cached_game_state') or iteration % 100 == 0:
+                    self._cached_game_state = self.setup_game(num_players)
+                
+                game_state = self._cached_game_state.copy()
                 
                 # Run CFR iteration
                 utilities = self.cfr_solver.train_iteration(game_state)
                 
-                # Collect statistics
-                if iteration % 1000 == 0:
+                # Collect statistics less frequently for speed
+                if iteration % 5000 == 0:
                     self._collect_training_stats(iteration, utilities, stats)
                 
-                # Save checkpoint
-                if iteration % checkpoint_frequency == 0 and iteration > 0:
+                # Save checkpoint less frequently for speed
+                if iteration % (checkpoint_frequency * 2) == 0 and iteration > 0:
                     checkpoint_path = f"data/blueprints/checkpoint_{iteration}.pkl"
                     self.cfr_solver.save_strategy(checkpoint_path)
                     print(f"Saved checkpoint at iteration {iteration}")

@@ -1,0 +1,40 @@
+# Fast training configuration - prioritizes speed over accuracy
+game:
+  num_players: 2  # Heads-up only for faster training
+  small_blind: 50
+  big_blind: 100
+  starting_stack: 10000
+  min_players: 2
+  max_players: 2  # Heads-up only
+
+training:
+  iterations: 10000  # Reduced iterations for faster testing
+  checkpoint_frequency: 1000
+  evaluation_frequency: 2000
+  parallel_workers: 1
+
+abstraction:
+  # Simplified card abstractions for speed
+  card_buckets:
+    preflop: 10    # Much fewer buckets
+    flop: 50       # Reduced from 200
+    turn: 100      # Reduced from 500  
+    river: 200     # Reduced from 1000
+  
+  # Simplified action abstractions
+  action_fractions: [0.33, 0.67, 1.0, 2.0]  # Only 4 bet sizes instead of many
+  
+  # Fast hand evaluation settings
+  hand_samples: 1000      # Reduced from 10000
+  clustering_samples: 500 # Reduced from 5000
+  use_fast_eval: true
+
+cfr:
+  solver_type: "simple"  # Force SimpleCFR for reliability
+  discount_factor: 0.95
+  exploration_threshold: 0.1
+  regret_matching_plus: true
+
+evaluation:
+  num_hands: 100  # Faster evaluation
+  num_opponents: 1  # Heads-up only

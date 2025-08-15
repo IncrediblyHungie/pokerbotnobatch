@@ -50,7 +50,17 @@ class Card:
         self.suit = suit
     
     def __str__(self):
-        return f"{self.rank.name[0]}{self.suit.name[0]}"
+        # Use numbers for ranks 2-10, letters for face cards and Ace
+        rank_display = {
+            2: "2", 3: "3", 4: "4", 5: "5", 6: "6", 7: "7", 8: "8", 9: "9", 10: "10",
+            11: "J", 12: "Q", 13: "K", 14: "A"
+        }
+        suit_display = {"SPADES": "S", "HEARTS": "H", "DIAMONDS": "D", "CLUBS": "C"}
+        
+        rank_str = rank_display.get(self.rank.value, str(self.rank.value))
+        suit_str = suit_display.get(self.suit.name, self.suit.name[0])
+        
+        return f"{rank_str}{suit_str}"
     
     def __repr__(self):
         return str(self)
