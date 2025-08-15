@@ -1,0 +1,46 @@
+# High-quality training config designed to generate thousands of information sets
+game:
+  num_players: 6
+  small_blind: 50
+  big_blind: 100
+  starting_stack: 10000
+  min_players: 6
+  max_players: 6
+
+training:
+  iterations: 100000  # More iterations for better coverage
+  checkpoint_frequency: 10000
+  evaluation_frequency: 25000
+  parallel_workers: 16
+
+abstraction:
+  # Much more detailed abstractions to create diverse information sets
+  card_buckets:
+    preflop: 169    # All 169 possible preflop hands (maximum diversity)
+    flop: 2000      # Fine-grained flop abstraction
+    turn: 2000      # Fine-grained turn abstraction
+    river: 2000     # Fine-grained river abstraction
+  
+  # More action sizes for richer decision trees
+  action_fractions: [0.25, 0.33, 0.5, 0.66, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 8.0]
+  
+  # High-quality hand evaluation for better abstractions
+  hand_samples: 10000      # More samples for accurate equity calculations
+  clustering_samples: 5000 # More clustering samples for better grouping
+  use_fast_eval: false     # Use accurate evaluation
+
+cfr:
+  solver_type: "simple"  # Stick with SimpleCFR but with rich abstractions
+  discount_factor: 0.95
+  exploration_threshold: 0.1  # Lower threshold for more exploration
+  regret_matching_plus: true
+
+evaluation:
+  num_hands: 2000
+  num_opponents: 5
+
+# Additional settings to encourage information set diversity
+diversity:
+  randomize_dealing: true      # Ensure diverse card distributions
+  position_rotation: true      # Rotate dealer position
+  stack_variation: false       # Keep stacks consistent for now

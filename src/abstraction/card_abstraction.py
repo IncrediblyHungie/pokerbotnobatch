@@ -34,6 +34,9 @@ class CardAbstraction:
         
         # Initialize preflop hands (all 169 canonical hands)
         self.preflop_hands = self._generate_preflop_hands()
+        
+        # Train abstractions immediately upon initialization
+        self.train_abstractions()
     
     def _generate_preflop_hands(self) -> List[Tuple[Card, Card]]:
         """Generate all 169 canonical preflop hands"""

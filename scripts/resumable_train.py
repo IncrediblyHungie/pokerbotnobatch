@@ -28,6 +28,12 @@ def worker_train_batch(args):
         # Suppress output during worker initialization
         import io
         import sys
+        import yaml
+        
+        # Load config to get num_players
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+        num_players = config['game']['num_players']
         
         old_stdout = sys.stdout
         sys.stdout = io.StringIO()
@@ -40,15 +46,16 @@ def worker_train_batch(args):
         
         sys.stdout = old_stdout
         
-        total_utility = {0: 0.0, 1: 0.0}
+        total_utility = {i: 0.0 for i in range(num_players)}
         
         # Train the batch
         for i in range(batch_size):
-            game_state = blueprint_gen.setup_game(2)
+            game_state = blueprint_gen.setup_game(num_players)
             utilities = blueprint_gen.cfr_solver.train_iteration(game_state)
             
             for player_id, utility in utilities.items():
-                total_utility[player_id] += utility
+                if player_id in total_utility:
+                    total_utility[player_id] += utility
         
         # Return the trained infosets and utilities
         infosets_data = {}
@@ -64,7 +71,7 @@ def worker_train_batch(args):
         
     except Exception as e:
         print(f"Worker {worker_id} failed: {e}")
-        return worker_id, 0, {}, {0: 0.0, 1: 0.0}
+        return worker_id, 0, {}, {}
 
 
 def save_checkpoint(checkpoint_path, iterations_completed, all_infosets, start_time):
@@ -140,7 +147,17 @@ def resumable_parallel_train(total_iterations: int = 50000, num_workers: int = N
         original_start_time = time.time()
         remaining_iterations = total_iterations
     
-    config_path = "config/fast_training_config.yaml"
+    # Use command line config or default
+    import sys
+    if len(sys.argv) > 1:
+        if 'high_quality' in ' '.join(sys.argv):
+            config_path = "config/high_quality_training.yaml"
+        elif 'pluribus_6p' in ' '.join(sys.argv):
+            config_path = "config/working_six_player.yaml"
+        else:
+            config_path = "config/working_training_config.yaml"
+    else:
+        config_path = "config/working_training_config.yaml"
     
     # Calculate batch size for remaining work
     batch_size = max(100, remaining_iterations // num_workers)
@@ -226,7 +243,7 @@ def resumable_parallel_train(total_iterations: int = 50000, num_workers: int = N
     strategy_data = {
         'infosets': all_infosets,
         'iterations': iterations_completed,
-        'total_utility': {0: 0.0, 1: 0.0}
+        'total_utility': {}
     }
     
     final_path = f"data/blueprints/{checkpoint_name}_final.pkl"

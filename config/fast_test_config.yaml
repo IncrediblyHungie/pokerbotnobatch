@@ -1,0 +1,39 @@
+# Fast test configuration to verify abstractions work
+game:
+  num_players: 3  # Fewer players for speed
+  small_blind: 50
+  big_blind: 100
+  starting_stack: 10000
+  min_players: 3
+  max_players: 3
+
+training:
+  iterations: 1000
+  checkpoint_frequency: 500
+  evaluation_frequency: 1000
+  parallel_workers: 2
+
+abstraction:
+  # Small but meaningful abstractions for testing
+  card_buckets:
+    preflop: 50     # Reduced for speed
+    flop: 100       # Small but non-zero
+    turn: 100      
+    river: 100     
+  
+  action_fractions: [0.5, 1.0, 2.0]  # Simple actions
+  
+  # Fast evaluation for testing
+  hand_samples: 500       # Much smaller for speed
+  clustering_samples: 100 # Much smaller for speed
+  use_fast_eval: true
+
+cfr:
+  solver_type: "simple"
+  discount_factor: 0.95
+  exploration_threshold: 0.3
+  regret_matching_plus: true
+
+evaluation:
+  num_hands: 100
+  num_opponents: 2

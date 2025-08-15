@@ -10,7 +10,8 @@ from collections import defaultdict
 
 from cfr.mccfr import InfoSet
 from engine.game_state import GameState
-from abstraction.card_abstraction import CardAbstraction
+from abstraction.simple_card_abstraction import SimpleCardAbstraction
+from engine.game_state import BettingRound
 from abstraction.action_abstraction import ActionAbstraction
 from utils.device_config import get_device_config
 
@@ -27,7 +28,7 @@ class SafeInfoSet(InfoSet):
 class SimpleCFR:
     """Simple, safe CFR implementation that guarantees termination"""
     
-    def __init__(self, card_abstraction: CardAbstraction, 
+    def __init__(self, card_abstraction: SimpleCardAbstraction, 
                  action_abstraction: ActionAbstraction, device_config=None):
         self.card_abstraction = card_abstraction
         self.action_abstraction = action_abstraction
@@ -51,9 +52,36 @@ class SimpleCFR:
         return self.infosets[key]
     
     def create_infoset_key(self, game_state: GameState, player_id: int) -> str:
-        """Create simple information set key"""
-        # Simplified key generation to avoid any potential issues
-        return f"p{player_id}_r{game_state.betting_round.value}_t{game_state.is_terminal()}"
+        """Create information set key using card abstraction"""
+        player = game_state.players[player_id]
+        
+        # Get card bucket using abstraction
+        hole_cards_bucket = self.card_abstraction.get_bucket(
+            player.hole_cards, 
+            game_state.community_cards,
+            game_state.betting_round
+        )
+        
+        # Get board bucket (if post-flop)
+        if game_state.betting_round == BettingRound.PREFLOP:
+            board_bucket = 0
+        else:
+            board_bucket = self.card_abstraction.get_bucket(
+                [], game_state.community_cards, game_state.betting_round
+            )
+        
+        # Simple betting history
+        betting_history = []
+        for pid, action, amount in game_state.round_betting_history[game_state.betting_round]:
+            relative_pid = "self" if pid == player_id else f"opp{pid}"
+            betting_history.append(f"{relative_pid}:{action.value}:{amount}")
+        
+        betting_str = "|".join(betting_history)
+        
+        # Position
+        position = (player_id - game_state.dealer_position) % game_state.num_players
+        
+        return f"{hole_cards_bucket}#{board_bucket}#{betting_str}#{game_state.betting_round.value}#{position}"
     
     def train_iteration(self, game_state: GameState) -> Dict[int, float]:
         """Run one safe CFR iteration with guaranteed termination"""

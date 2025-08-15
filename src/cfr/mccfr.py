@@ -91,18 +91,24 @@ class MCCFR:
         
         return self.infosets[key]
     
+    def get_strategy(self, infoset_key: str) -> Optional[np.ndarray]:
+        """Get the current strategy for an information set"""
+        if infoset_key in self.infosets:
+            return self.infosets[infoset_key].get_average_strategy()
+        return None
+    
     def create_infoset_key(self, game_state: GameState, player_id: int) -> str:
-        """Create information set key for current game state"""
+        """Create information set key for current game state - ONLY uses player's own cards and public info"""
         player = game_state.players[player_id]
         
-        # Get card buckets
+        # CRITICAL: Only use player's own hole cards - never opponent cards
         hole_cards_bucket = self.card_abstraction.get_bucket(
             player.hole_cards, 
             game_state.community_cards,
             game_state.betting_round
         )
         
-        # Get board bucket (if post-flop)
+        # Get board bucket (if post-flop) - this is public information
         if game_state.betting_round == BettingRound.PREFLOP:
             board_bucket = 0
         else:
@@ -110,14 +116,19 @@ class MCCFR:
                 [], game_state.community_cards, game_state.betting_round
             )
         
-        # Create betting history string
+        # Create betting history string - this is public information
         betting_history = []
         for pid, action, amount in game_state.round_betting_history[game_state.betting_round]:
-            betting_history.append(f"{pid}:{action.value}:{amount}")
+            # Abstract player identity to avoid overfitting to specific opponents
+            relative_pid = "self" if pid == player_id else f"opp{pid}"
+            betting_history.append(f"{relative_pid}:{action.value}:{amount}")
         
         betting_str = "|".join(betting_history)
         
-        return f"{hole_cards_bucket}#{board_bucket}#{betting_str}#{game_state.betting_round.value}"
+        # Include position information
+        position = (player_id - game_state.dealer_position) % game_state.num_players
+        
+        return f"{hole_cards_bucket}#{board_bucket}#{betting_str}#{game_state.betting_round.value}#{position}"
     
     def train_iteration(self, game_state: GameState) -> Dict[int, float]:
         """
