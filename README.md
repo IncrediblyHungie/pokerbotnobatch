@@ -75,6 +75,7 @@ Options:
 - `--iterations N`: Number of training iterations (default: 1,000,000)
 - `--skip-abstractions`: Skip card abstraction training
 - `--abstractions-only`: Only train abstractions
+- `--workers N`: Run training in parallel using N CPU processes
 
 ### 2. Test the Bot
 

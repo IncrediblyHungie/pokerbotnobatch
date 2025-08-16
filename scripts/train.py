@@ -49,9 +49,10 @@ def train_abstractions(config_path: str, use_gpu: bool = True, device_id: int = 
     print(f"Card abstractions saved to {abstraction_path}")
 
 
-def train_blueprint(config_path: str, iterations: int = None, 
+def train_blueprint(config_path: str, iterations: int = None,
                    load_abstractions: bool = True, use_gpu: bool = True, device_id: int = 0,
-                   batch_size: int = None, disable_batching: bool = False, skip_evaluation: bool = False):
+                   batch_size: int = None, disable_batching: bool = False, skip_evaluation: bool = False,
+                   workers: int = 1):
     """Train blueprint strategy"""
     print("=" * 50)
     print("Training Blueprint Strategy")
@@ -78,7 +79,11 @@ def train_blueprint(config_path: str, iterations: int = None,
     if iterations is None:
         iterations = config['training']['iterations']
     
-    stats = blueprint_gen.train_blueprint(iterations)
+    if workers and workers > 1:
+        print(f"Using parallel training with {workers} workers")
+        stats = blueprint_gen.train_blueprint_parallel(iterations, workers)
+    else:
+        stats = blueprint_gen.train_blueprint(iterations)
     
     # Save final blueprint
     blueprint_path = "data/blueprints/final_blueprint.pkl"
@@ -124,6 +129,8 @@ def main():
                        help="Run a quick test (50 iterations) to verify everything works")
     parser.add_argument("--skip-evaluation", action="store_true",
                        help="Skip blueprint evaluation (faster completion)")
+    parser.add_argument("--workers", type=int, default=1,
+                       help="Number of parallel workers for training")
     
     args = parser.parse_args()
     
@@ -169,7 +176,8 @@ def main():
                 device_id=device_id,
                 batch_size=args.batch_size,
                 disable_batching=args.disable_batching,
-                skip_evaluation=args.skip_evaluation
+                skip_evaluation=args.skip_evaluation,
+                workers=args.workers
             )
         
             elapsed = time.time() - start_time
