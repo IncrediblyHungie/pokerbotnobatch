@@ -6,7 +6,9 @@ Runs self-play training to create a baseline strategy.
 import yaml
 import random
 import os
-from typing import Dict, List
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Dict, List, Tuple
 from tqdm import tqdm
 from engine.game_state import GameState, BettingRound
 from engine.hand_evaluator import Card, Rank, Suit, create_card
@@ -18,9 +20,44 @@ from cfr.simple_cfr import SimpleCFR
 from utils.device_config import setup_device
 
 
+def _worker_train_batch(args: Tuple[int, int, str]):
+    """Worker function to train a batch of iterations in parallel."""
+    worker_id, batch_size, config_path = args
+
+    # Import here to avoid recursive import issues when spawning processes
+    from strategy.blueprint_generator import BlueprintGenerator
+
+    # Each worker uses CPU to avoid GPU contention
+    blueprint_gen = BlueprintGenerator(
+        config_path,
+        use_gpu=False,
+        use_batch_processing=False
+    )
+
+    total_utility = {0: 0.0, 1: 0.0}
+
+    for _ in range(batch_size):
+        game_state = blueprint_gen.setup_game(2)
+        utilities = blueprint_gen.cfr_solver.train_iteration(game_state)
+        for pid, util in utilities.items():
+            total_utility[pid] += util
+
+    infosets_data = {}
+    for key, infoset in blueprint_gen.cfr_solver.infosets.items():
+        infosets_data[key] = {
+            'regret_sum': infoset.regret_sum.copy(),
+            'strategy_sum': infoset.strategy_sum.copy(),
+            'reach_count': infoset.reach_count,
+            'num_actions': infoset.num_actions
+        }
+
+    return worker_id, batch_size, infosets_data, total_utility
+
+
 class BlueprintGenerator:
-    def __init__(self, config_path: str, use_gpu: bool = True, device_id: int = 0, 
+    def __init__(self, config_path: str, use_gpu: bool = True, device_id: int = 0,
                  use_batch_processing: bool = True, batch_size: int = None):
+        self.config_path = config_path
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         
@@ -273,6 +310,71 @@ class BlueprintGenerator:
                     checkpoint_path = f"data/blueprints/checkpoint_{iteration}.pkl"
                     self.cfr_solver.save_strategy(checkpoint_path)
                     print(f"Saved checkpoint at iteration {iteration}")
+
+        return stats
+
+    def train_blueprint_parallel(self, iterations: int, num_workers: int = 16) -> Dict:
+        """Parallel version of train_blueprint using multiple CPU processes.
+
+        Args:
+            iterations: Total iterations to train.
+            num_workers: Number of worker processes.
+
+        Returns:
+            Training statistics similar to train_blueprint.
+        """
+
+        num_workers = min(num_workers, mp.cpu_count(), 16)
+        if num_workers <= 1:
+            return self.train_blueprint(iterations)
+
+        batch_size = max(100, iterations // num_workers)
+        total_batches = (iterations + batch_size - 1) // batch_size
+
+        stats = {
+            'iterations': [],
+            'exploitability': [],
+            'total_infosets': [],
+            'avg_utility': []
+        }
+
+        total_iterations_done = 0
+        total_utility = {0: 0.0, 1: 0.0}
+
+        with ProcessPoolExecutor(max_workers=num_workers) as executor:
+            futures = []
+            for batch_id in range(total_batches):
+                remaining = iterations - batch_id * batch_size
+                current_batch = min(batch_size, remaining)
+                args = (batch_id, current_batch, self.config_path)
+                futures.append(executor.submit(_worker_train_batch, args))
+
+            for future in as_completed(futures):
+                worker_id, batch_done, infosets_data, util = future.result()
+                total_iterations_done += batch_done
+                for pid, val in util.items():
+                    total_utility[pid] += val
+
+                for key, data in infosets_data.items():
+                    infoset = self.cfr_solver.get_infoset(key, data['num_actions'])
+                    infoset.regret_sum += self.device_config.array(data['regret_sum'])
+                    infoset.strategy_sum += self.device_config.array(data['strategy_sum'])
+                    infoset.reach_count += data['reach_count']
+
+        self.cfr_solver.iterations += total_iterations_done
+        self.cfr_solver.total_utility.update(total_utility)
+
+        exploitability = self.cfr_solver.get_exploitability()
+        avg_utility = sum(total_utility.values()) / len(total_utility)
+
+        stats['iterations'].append(total_iterations_done)
+        stats['exploitability'].append(exploitability)
+        stats['total_infosets'].append(len(self.cfr_solver.infosets))
+        stats['avg_utility'].append(avg_utility)
+
+        print(f"Parallel training complete: {total_iterations_done} iterations using {num_workers} workers")
+
+        return stats
     
     def _collect_training_stats(self, iteration: int, utilities: Dict, stats: Dict):
         """Collect and display training statistics"""
